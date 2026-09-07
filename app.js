@@ -106,11 +106,34 @@
     });
   }
 
+  // Last-resort decode path for formats createImageBitmap can't handle
+  // (e.g. an edge-case HEIC file Safari didn't transcode). A plain <img>
+  // element can decode almost anything the browser can render at all.
+  function loadImageElement(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("画像を読み込めませんでした"));
+      };
+      img.src = url;
+    });
+  }
+
   async function loadBitmap(file) {
     try {
       return await createImageBitmap(file, { imageOrientation: "from-image" });
     } catch (e) {
-      return await createImageBitmap(file);
+      try {
+        return await createImageBitmap(file);
+      } catch (e2) {
+        return await loadImageElement(file);
+      }
     }
   }
 
@@ -329,21 +352,31 @@
   });
 
   shutterBtn.addEventListener("click", () => {
-    const vw = cameraVideo.videoWidth;
-    const vh = cameraVideo.videoHeight;
-    if (!vw || !vh) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = vw;
-    canvas.height = vh;
-    canvas.getContext("2d").drawImage(cameraVideo, 0, 0, vw, vh);
-    closeCameraGuide();
-    canvas.toBlob(
-      (blob) => {
-        if (blob) handleFileSelected(blob);
-      },
-      "image/jpeg",
-      0.92
-    );
+    try {
+      const vw = cameraVideo.videoWidth;
+      const vh = cameraVideo.videoHeight;
+      if (!vw || !vh) return;
+      const canvas = document.createElement("canvas");
+      canvas.width = vw;
+      canvas.height = vh;
+      canvas.getContext("2d").drawImage(cameraVideo, 0, 0, vw, vh);
+      closeCameraGuide();
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            handleFileSelected(blob);
+          } else {
+            setStatus("撮影に失敗しました。もう一度お試しください。", true);
+          }
+        },
+        "image/jpeg",
+        0.92
+      );
+    } catch (e) {
+      console.error(e);
+      closeCameraGuide();
+      setStatus("撮影に失敗しました。もう一度お試しください。", true);
+    }
   });
 
   // --- トリミング画面（手動での位置・拡大縮小調整） -----------------------
@@ -364,6 +397,12 @@
     const url = URL.createObjectURL(sourceBlob);
     const img = new Image();
     img.onload = () => {
+      // Reveal the overlay BEFORE measuring: while [hidden], the viewport
+      // has no layout box, so getBoundingClientRect() would read back 0x0
+      // and poison every scale/translate computation below (this was the
+      // root cause of the blank gray preview on iOS Safari).
+      cropOverlay.hidden = false;
+
       const rect = cropViewport.getBoundingClientRect();
       const viewportW = rect.width;
       const viewportH = rect.height;
@@ -388,7 +427,10 @@
       cropImage.src = url;
       zoomSlider.value = "1";
       applyCropTransform();
-      cropOverlay.hidden = false;
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setStatus("写真の読み込みに失敗しました。別の写真でお試しください。", true);
     };
     img.src = url;
   }
@@ -407,10 +449,13 @@
     cropState.dragging = true;
     cropState.lastX = e.clientX;
     cropState.lastY = e.clientY;
-    cropViewport.setPointerCapture(e.pointerId);
   });
 
-  cropViewport.addEventListener("pointermove", (e) => {
+  // Listening on window (rather than relying on setPointerCapture, which has
+  // had inconsistent behavior on iOS Safari) keeps the drag going even if a
+  // finger slides outside the crop viewport, and avoids any risk of a stuck
+  // capture blocking taps on the Cancel/Save buttons afterwards.
+  window.addEventListener("pointermove", (e) => {
     if (!cropState || !cropState.dragging) return;
     const dx = e.clientX - cropState.lastX;
     const dy = e.clientY - cropState.lastY;
@@ -425,9 +470,8 @@
   function endCropDrag() {
     if (cropState) cropState.dragging = false;
   }
-  cropViewport.addEventListener("pointerup", endCropDrag);
-  cropViewport.addEventListener("pointercancel", endCropDrag);
-  cropViewport.addEventListener("pointerleave", endCropDrag);
+  window.addEventListener("pointerup", endCropDrag);
+  window.addEventListener("pointercancel", endCropDrag);
 
   zoomSlider.addEventListener("input", () => {
     if (!cropState) return;
@@ -452,21 +496,34 @@
   cropConfirmBtn.addEventListener("click", async () => {
     if (!cropState) return;
     const s = cropState;
-    const sx0 = Math.max(0, (0 - s.translateX) / s.scale);
-    const sy0 = Math.max(0, (0 - s.translateY) / s.scale);
-    const sx1 = Math.min(s.naturalWidth, (s.viewportW - s.translateX) / s.scale);
-    const sy1 = Math.min(s.naturalHeight, (s.viewportH - s.translateY) / s.scale);
-    const cropW = Math.max(1, Math.round(sx1 - sx0));
-    const cropH = Math.max(1, Math.round(sy1 - sy0));
+    try {
+      const sx0 = Math.max(0, (0 - s.translateX) / s.scale);
+      const sy0 = Math.max(0, (0 - s.translateY) / s.scale);
+      const sx1 = Math.min(s.naturalWidth, (s.viewportW - s.translateX) / s.scale);
+      const sy1 = Math.min(s.naturalHeight, (s.viewportH - s.translateY) / s.scale);
+      const cropW = Math.max(1, Math.round(sx1 - sx0));
+      const cropH = Math.max(1, Math.round(sy1 - sy0));
 
-    const canvas = document.createElement("canvas");
-    canvas.width = cropW;
-    canvas.height = cropH;
-    canvas.getContext("2d").drawImage(s.img, sx0, sy0, cropW, cropH, 0, 0, cropW, cropH);
+      if (!Number.isFinite(cropW) || !Number.isFinite(cropH)) {
+        throw new Error("トリミング範囲の計算に失敗しました");
+      }
 
-    const croppedBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
-    closeCropUI();
-    await finalizePhoto(croppedBlob);
+      const canvas = document.createElement("canvas");
+      canvas.width = cropW;
+      canvas.height = cropH;
+      canvas.getContext("2d").drawImage(s.img, sx0, sy0, cropW, cropH, 0, 0, cropW, cropH);
+
+      const croppedBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+      if (!croppedBlob) {
+        throw new Error("画像の書き出しに失敗しました");
+      }
+      closeCropUI();
+      await finalizePhoto(croppedBlob);
+    } catch (e) {
+      console.error(e);
+      closeCropUI();
+      setStatus("トリミングに失敗しました。もう一度お試しください。", true);
+    }
   });
 
   // --- 写真選択の入口（カメラ撮影・ライブラリ選択の共通処理） --------------
