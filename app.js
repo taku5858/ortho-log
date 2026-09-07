@@ -8,7 +8,9 @@
   const JPEG_WEBP_QUALITY = 0.85;
 
   const captureBtn = document.getElementById("captureBtn");
-  const fileInput = document.getElementById("fileInput");
+  const cameraInput = document.getElementById("cameraInput");
+  const libraryBtn = document.getElementById("libraryBtn");
+  const libraryInput = document.getElementById("libraryInput");
   const previewWrap = document.getElementById("previewWrap");
   const previewImg = document.getElementById("previewImg");
   const capturedAtText = document.getElementById("capturedAtText");
@@ -243,15 +245,19 @@
     capturedAtText.textContent = "";
     memoInput.value = "";
     saveBtn.disabled = true;
-    fileInput.value = "";
+    cameraInput.value = "";
+    libraryInput.value = "";
   }
 
   captureBtn.addEventListener("click", () => {
-    fileInput.click();
+    cameraInput.click();
   });
 
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files && fileInput.files[0];
+  libraryBtn.addEventListener("click", () => {
+    libraryInput.click();
+  });
+
+  async function handleFileSelected(file) {
     if (!file) return;
 
     setStatus("写真を処理中...", false);
@@ -273,6 +279,14 @@
       console.error(e);
       setStatus("写真の読み込みに失敗しました。別の写真でお試しください。", true);
     }
+  }
+
+  cameraInput.addEventListener("change", () => {
+    handleFileSelected(cameraInput.files && cameraInput.files[0]);
+  });
+
+  libraryInput.addEventListener("change", () => {
+    handleFileSelected(libraryInput.files && libraryInput.files[0]);
   });
 
   clearPreviewBtn.addEventListener("click", () => {

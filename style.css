@@ -84,6 +84,16 @@ body {
   cursor: not-allowed;
 }
 
+.btn-secondary {
+  background: #f2f2f2;
+  color: var(--ink);
+  margin-top: 10px;
+}
+
+.btn-secondary:active {
+  background: #e6e6e6;
+}
+
 .btn-text {
   background: none;
   color: var(--sub);

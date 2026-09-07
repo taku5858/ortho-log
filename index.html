@@ -29,7 +29,10 @@
   <main>
     <section class="capture-section">
       <button id="captureBtn" class="btn btn-primary" type="button">📷 写真を撮る</button>
-      <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+
+      <button id="libraryBtn" class="btn btn-secondary" type="button">🖼️ ライブラリから選ぶ</button>
+      <input type="file" id="libraryInput" accept="image/*" hidden>
 
       <div id="previewWrap" class="preview-wrap" hidden>
         <img id="previewImg" alt="撮影した写真のプレビュー">
