@@ -1,4 +1,4 @@
-const CACHE_NAME = "ortho-log-cache-v3";
+const CACHE_NAME = "ortho-log-cache-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -20,34 +20,45 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(
-        names
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+    caches
+      .keys()
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => caches.delete(name))
+        )
       )
-    )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Cache-first for the app shell; network fallback for anything else.
-// Never intercepts photo data (that lives only in IndexedDB, not fetched over the network).
+// Network-first: always try to fetch the latest index.html / app.js / style.css
+// (and any other same-origin app-shell file) from the network first, so a new
+// GitHub Pages deploy shows up immediately instead of being masked by the cache.
+// The cache is only a fallback for when the device is offline.
+// Photo/memo records are never touched here — they live only in IndexedDB,
+// which this service worker never reads, writes, or deletes.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (response && response.ok && response.type === "basic") {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-    })
-  );
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  event.respondWith(networkFirst(event.request));
 });
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const networkResponse = await fetch(request, { cache: "no-store" });
+    if (networkResponse && networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (err) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw err;
+  }
+}
