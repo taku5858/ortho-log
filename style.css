@@ -232,3 +232,175 @@ textarea:focus {
   font-size: 0.9rem;
   padding: 20px 0;
 }
+
+/* --- 撮影ガイド画面 --- */
+.camera-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 1000;
+}
+
+.camera-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.guide-line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.guide-vertical {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.guide-horizontal {
+  top: 52%;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.guide-oval {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 62%;
+  height: 26%;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50% / 45%;
+}
+
+.camera-hint {
+  position: absolute;
+  top: max(24px, env(safe-area-inset-top));
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+.camera-hint p {
+  display: inline-block;
+  margin: 4px auto;
+  padding: 6px 14px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.camera-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+}
+
+.shutter-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: #fff;
+  border: 4px solid rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 0;
+}
+
+.camera-btn-text {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.camera-btn-spacer {
+  width: 60px;
+}
+
+/* --- トリミング画面 --- */
+.crop-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--white);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  gap: 18px;
+}
+
+.crop-hint {
+  font-size: 0.85rem;
+  color: var(--sub);
+  margin: 0;
+}
+
+.crop-viewport {
+  position: relative;
+  width: min(86vw, 380px);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #f0f0f0;
+  touch-action: none;
+}
+
+.crop-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.crop-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(86vw, 380px);
+}
+
+.crop-zoom-label {
+  font-size: 0.8rem;
+  color: var(--sub);
+}
+
+.crop-zoom-row input[type="range"] {
+  flex: 1;
+}
+
+.crop-actions {
+  display: flex;
+  gap: 12px;
+  width: min(86vw, 380px);
+}
+
+.crop-actions .btn {
+  margin: 0;
+}

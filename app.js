@@ -11,6 +11,19 @@
   const cameraInput = document.getElementById("cameraInput");
   const libraryBtn = document.getElementById("libraryBtn");
   const libraryInput = document.getElementById("libraryInput");
+
+  const cameraOverlay = document.getElementById("cameraOverlay");
+  const cameraVideo = document.getElementById("cameraVideo");
+  const shutterBtn = document.getElementById("shutterBtn");
+  const cancelCameraBtn = document.getElementById("cancelCameraBtn");
+
+  const cropOverlay = document.getElementById("cropOverlay");
+  const cropViewport = document.getElementById("cropViewport");
+  const cropImage = document.getElementById("cropImage");
+  const zoomSlider = document.getElementById("zoomSlider");
+  const cropCancelBtn = document.getElementById("cropCancelBtn");
+  const cropConfirmBtn = document.getElementById("cropConfirmBtn");
+
   const previewWrap = document.getElementById("previewWrap");
   const previewImg = document.getElementById("previewImg");
   const capturedAtText = document.getElementById("capturedAtText");
@@ -28,6 +41,8 @@
   let pendingCapturedAt = null; // Date: EXIF DateTimeOriginal, or fallback to now
   let listObjectUrls = [];
   let supportsWebp = false;
+  let mediaStream = null;
+  let cropState = null; // pan/zoom state while the crop overlay is open
 
   function openDB() {
     if (dbPromise) return dbPromise;
@@ -118,6 +133,19 @@
       canvas.toBlob(resolve, mime, JPEG_WEBP_QUALITY)
     );
     return { blob, mime };
+  }
+
+  // Renders the source (camera capture / library photo) to a full-resolution,
+  // orientation-corrected JPEG. This becomes the working image for the crop
+  // step below; it is never stored — only the final cropped+compressed blob is.
+  async function loadOrientedImageBlob(file) {
+    const bitmap = await loadBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0);
+    if (bitmap.close) bitmap.close();
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
   }
 
   // --- Minimal EXIF reader (no external library) -----------------------
@@ -249,26 +277,226 @@
     libraryInput.value = "";
   }
 
+  // --- 撮影ガイド（自前カメラ画面） ---------------------------------------
+  // ネイティブのカメラアプリ（capture="environment"での起動）には補助線を
+  // 重ねられないため、getUserMediaでその場にカメラ映像を表示し、位置合わせ
+  // ガイドを重ねる。取得できない・拒否された場合は、既存のネイティブカメラ
+  // 起動（cameraInput.click()）に自動でフォールバックする。
+  async function openCameraGuide() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      cameraInput.click();
+      return;
+    }
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      cameraVideo.srcObject = mediaStream;
+      cameraOverlay.hidden = false;
+      await cameraVideo.play().catch(() => {});
+    } catch (e) {
+      console.warn("In-page camera unavailable, falling back to native camera:", e);
+      stopMediaStream();
+      cameraOverlay.hidden = true;
+      cameraInput.click();
+    }
+  }
+
+  function stopMediaStream() {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+      mediaStream = null;
+    }
+    cameraVideo.srcObject = null;
+  }
+
+  function closeCameraGuide() {
+    stopMediaStream();
+    cameraOverlay.hidden = true;
+  }
+
   captureBtn.addEventListener("click", () => {
-    cameraInput.click();
+    openCameraGuide();
   });
 
   libraryBtn.addEventListener("click", () => {
     libraryInput.click();
   });
 
+  cancelCameraBtn.addEventListener("click", () => {
+    closeCameraGuide();
+  });
+
+  shutterBtn.addEventListener("click", () => {
+    const vw = cameraVideo.videoWidth;
+    const vh = cameraVideo.videoHeight;
+    if (!vw || !vh) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = vw;
+    canvas.height = vh;
+    canvas.getContext("2d").drawImage(cameraVideo, 0, 0, vw, vh);
+    closeCameraGuide();
+    canvas.toBlob(
+      (blob) => {
+        if (blob) handleFileSelected(blob);
+      },
+      "image/jpeg",
+      0.92
+    );
+  });
+
+  // --- トリミング画面（手動での位置・拡大縮小調整） -----------------------
+  function applyCropTransform() {
+    if (!cropState) return;
+    cropImage.style.transform = `translate(${cropState.translateX}px, ${cropState.translateY}px) scale(${cropState.scale})`;
+  }
+
+  function clampCropTranslate() {
+    const s = cropState;
+    const minX = s.viewportW - s.naturalWidth * s.scale;
+    const minY = s.viewportH - s.naturalHeight * s.scale;
+    s.translateX = Math.min(0, Math.max(minX, s.translateX));
+    s.translateY = Math.min(0, Math.max(minY, s.translateY));
+  }
+
+  function openCropUI(sourceBlob) {
+    const url = URL.createObjectURL(sourceBlob);
+    const img = new Image();
+    img.onload = () => {
+      const rect = cropViewport.getBoundingClientRect();
+      const viewportW = rect.width;
+      const viewportH = rect.height;
+      const baseScale = Math.max(viewportW / img.naturalWidth, viewportH / img.naturalHeight);
+
+      cropState = {
+        url,
+        img,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+        viewportW,
+        viewportH,
+        baseScale,
+        scale: baseScale,
+        translateX: (viewportW - img.naturalWidth * baseScale) / 2,
+        translateY: (viewportH - img.naturalHeight * baseScale) / 2,
+        dragging: false,
+        lastX: 0,
+        lastY: 0,
+      };
+
+      cropImage.src = url;
+      zoomSlider.value = "1";
+      applyCropTransform();
+      cropOverlay.hidden = false;
+    };
+    img.src = url;
+  }
+
+  function closeCropUI() {
+    if (cropState && cropState.url) URL.revokeObjectURL(cropState.url);
+    cropState = null;
+    cropImage.src = "";
+    cropOverlay.hidden = true;
+  }
+
+  cropImage.addEventListener("dragstart", (e) => e.preventDefault());
+
+  cropViewport.addEventListener("pointerdown", (e) => {
+    if (!cropState) return;
+    cropState.dragging = true;
+    cropState.lastX = e.clientX;
+    cropState.lastY = e.clientY;
+    cropViewport.setPointerCapture(e.pointerId);
+  });
+
+  cropViewport.addEventListener("pointermove", (e) => {
+    if (!cropState || !cropState.dragging) return;
+    const dx = e.clientX - cropState.lastX;
+    const dy = e.clientY - cropState.lastY;
+    cropState.lastX = e.clientX;
+    cropState.lastY = e.clientY;
+    cropState.translateX += dx;
+    cropState.translateY += dy;
+    clampCropTranslate();
+    applyCropTransform();
+  });
+
+  function endCropDrag() {
+    if (cropState) cropState.dragging = false;
+  }
+  cropViewport.addEventListener("pointerup", endCropDrag);
+  cropViewport.addEventListener("pointercancel", endCropDrag);
+  cropViewport.addEventListener("pointerleave", endCropDrag);
+
+  zoomSlider.addEventListener("input", () => {
+    if (!cropState) return;
+    const s = cropState;
+    const zoomMultiplier = parseFloat(zoomSlider.value);
+    const newScale = s.baseScale * zoomMultiplier;
+    const centerX = s.viewportW / 2;
+    const centerY = s.viewportH / 2;
+    const sourceCenterX = (centerX - s.translateX) / s.scale;
+    const sourceCenterY = (centerY - s.translateY) / s.scale;
+    s.scale = newScale;
+    s.translateX = centerX - sourceCenterX * s.scale;
+    s.translateY = centerY - sourceCenterY * s.scale;
+    clampCropTranslate();
+    applyCropTransform();
+  });
+
+  cropCancelBtn.addEventListener("click", () => {
+    closeCropUI();
+  });
+
+  cropConfirmBtn.addEventListener("click", async () => {
+    if (!cropState) return;
+    const s = cropState;
+    const sx0 = Math.max(0, (0 - s.translateX) / s.scale);
+    const sy0 = Math.max(0, (0 - s.translateY) / s.scale);
+    const sx1 = Math.min(s.naturalWidth, (s.viewportW - s.translateX) / s.scale);
+    const sy1 = Math.min(s.naturalHeight, (s.viewportH - s.translateY) / s.scale);
+    const cropW = Math.max(1, Math.round(sx1 - sx0));
+    const cropH = Math.max(1, Math.round(sy1 - sy0));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = cropW;
+    canvas.height = cropH;
+    canvas.getContext("2d").drawImage(s.img, sx0, sy0, cropW, cropH, 0, 0, cropW, cropH);
+
+    const croppedBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+    closeCropUI();
+    await finalizePhoto(croppedBlob);
+  });
+
+  // --- 写真選択の入口（カメラ撮影・ライブラリ選択の共通処理） --------------
+  // EXIF撮影日時は元ファイルから読み取り、続けて向き補正済みの画像をトリミ
+  // ング画面に渡す。既存の圧縮処理（processImageFile）はトリミング確定後に
+  // 呼び出される（finalizePhoto）。
   async function handleFileSelected(file) {
     if (!file) return;
 
-    setStatus("写真を処理中...", false);
+    setStatus("写真を読み込み中...", false);
     try {
-      const [processed, exifDate] = await Promise.all([
-        processImageFile(file),
+      const [orientedBlob, exifDate] = await Promise.all([
+        loadOrientedImageBlob(file),
         extractExifDateTaken(file),
       ]);
+      pendingCapturedAt = exifDate || new Date();
+      setStatus("", false);
+      openCropUI(orientedBlob);
+    } catch (e) {
+      console.error(e);
+      setStatus("写真の読み込みに失敗しました。別の写真でお試しください。", true);
+    }
+  }
+
+  async function finalizePhoto(blob) {
+    setStatus("写真を処理中...", false);
+    try {
+      const processed = await processImageFile(blob);
       if (pendingPreviewUrl) URL.revokeObjectURL(pendingPreviewUrl);
       pendingPhoto = processed;
-      pendingCapturedAt = exifDate || new Date();
       pendingPreviewUrl = URL.createObjectURL(processed.blob);
       previewImg.src = pendingPreviewUrl;
       capturedAtText.textContent = `撮影日：${formatDate(pendingCapturedAt.toISOString())}`;
@@ -277,7 +505,7 @@
       setStatus("", false);
     } catch (e) {
       console.error(e);
-      setStatus("写真の読み込みに失敗しました。別の写真でお試しください。", true);
+      setStatus("写真の処理に失敗しました。別の写真でお試しください。", true);
     }
   }
 

@@ -60,6 +60,41 @@
   </main>
 </div>
 
+<!-- 撮影ガイド画面: 端末カメラをその場で表示し、位置合わせの補助線を重ねる -->
+<div id="cameraOverlay" class="camera-overlay" hidden>
+  <video id="cameraVideo" class="camera-video" autoplay playsinline muted></video>
+  <div class="camera-guides" aria-hidden="true">
+    <div class="guide-line guide-vertical"></div>
+    <div class="guide-line guide-horizontal"></div>
+    <div class="guide-oval"></div>
+  </div>
+  <div class="camera-hint">
+    <p>前歯を中央に合わせてください</p>
+    <p>できるだけ正面から撮影してください</p>
+  </div>
+  <div class="camera-controls">
+    <button id="cancelCameraBtn" class="camera-btn-text" type="button">キャンセル</button>
+    <button id="shutterBtn" class="shutter-btn" type="button" aria-label="撮影"></button>
+    <span class="camera-btn-spacer"></span>
+  </div>
+</div>
+
+<!-- トリミング画面: 撮影後・ライブラリ選択後に、口元付近を手動で微調整して切り抜く -->
+<div id="cropOverlay" class="crop-overlay" hidden>
+  <p class="crop-hint">位置と大きさを調整してください</p>
+  <div id="cropViewport" class="crop-viewport">
+    <img id="cropImage" class="crop-image" alt="" draggable="false">
+  </div>
+  <div class="crop-zoom-row">
+    <span class="crop-zoom-label">拡大</span>
+    <input type="range" id="zoomSlider" min="1" max="3" step="0.01" value="1">
+  </div>
+  <div class="crop-actions">
+    <button id="cropCancelBtn" class="btn btn-secondary" type="button">キャンセル</button>
+    <button id="cropConfirmBtn" class="btn btn-primary" type="button">この範囲で保存</button>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
