@@ -250,6 +250,13 @@ textarea:focus {
   object-fit: cover;
 }
 
+/* Front camera preview is mirrored to feel like looking in a mirror.
+   This is purely visual — the frame captured for saving is read from
+   the unmirrored video source, so the stored photo is never flipped. */
+.camera-video.is-front {
+  transform: scaleX(-1);
+}
+
 .camera-guides {
   position: absolute;
   inset: 0;

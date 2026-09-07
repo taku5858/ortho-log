@@ -29,7 +29,7 @@
   <main>
     <section class="capture-section">
       <button id="captureBtn" class="btn btn-primary" type="button">📷 写真を撮る</button>
-      <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+      <input type="file" id="cameraInput" accept="image/*" capture="user" hidden>
 
       <button id="libraryBtn" class="btn btn-secondary" type="button">🖼️ ライブラリから選ぶ</button>
       <input type="file" id="libraryInput" accept="image/*" hidden>
@@ -75,7 +75,7 @@
   <div class="camera-controls">
     <button id="cancelCameraBtn" class="camera-btn-text" type="button">キャンセル</button>
     <button id="shutterBtn" class="shutter-btn" type="button" aria-label="撮影"></button>
-    <span class="camera-btn-spacer"></span>
+    <button id="switchCameraBtn" class="camera-btn-text" type="button">🔄 切替</button>
   </div>
 </div>
 

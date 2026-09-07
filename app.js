@@ -16,6 +16,7 @@
   const cameraVideo = document.getElementById("cameraVideo");
   const shutterBtn = document.getElementById("shutterBtn");
   const cancelCameraBtn = document.getElementById("cancelCameraBtn");
+  const switchCameraBtn = document.getElementById("switchCameraBtn");
 
   const cropOverlay = document.getElementById("cropOverlay");
   const cropViewport = document.getElementById("cropViewport");
@@ -43,6 +44,7 @@
   let supportsWebp = false;
   let mediaStream = null;
   let cropState = null; // pan/zoom state while the crop overlay is open
+  let currentFacingMode = "user"; // front camera by default — this app records the user's own teeth
 
   function openDB() {
     if (dbPromise) return dbPromise;
@@ -301,23 +303,45 @@
   }
 
   // --- 撮影ガイド（自前カメラ画面） ---------------------------------------
-  // ネイティブのカメラアプリ（capture="environment"での起動）には補助線を
-  // 重ねられないため、getUserMediaでその場にカメラ映像を表示し、位置合わせ
-  // ガイドを重ねる。取得できない・拒否された場合は、既存のネイティブカメラ
-  // 起動（cameraInput.click()）に自動でフォールバックする。
+  // ネイティブのカメラアプリ（capture属性での起動）には補助線を重ねられない
+  // ため、getUserMediaでその場にカメラ映像を表示し、位置合わせガイドを重ね
+  // る。歯を自分で撮影する用途のため前面カメラをデフォルトにし、切替ボタン
+  // で背面カメラにも変更できる。取得できない・拒否された場合は、既存のネイ
+  // ティブカメラ起動（cameraInput.click()）に自動でフォールバックする。
+  function updateCameraMirror() {
+    cameraVideo.classList.toggle("is-front", currentFacingMode === "user");
+  }
+
+  async function startCameraStream(facingMode) {
+    stopMediaStream();
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facingMode } },
+      audio: false,
+    });
+    cameraVideo.srcObject = mediaStream;
+    updateCameraMirror();
+    await cameraVideo.play().catch(() => {});
+  }
+
+  async function updateSwitchButtonVisibility() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputCount = devices.filter((d) => d.kind === "videoinput").length;
+      switchCameraBtn.hidden = videoInputCount < 2;
+    } catch (e) {
+      // If we can't enumerate devices, just leave the switch button visible.
+    }
+  }
+
   async function openCameraGuide() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       cameraInput.click();
       return;
     }
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      cameraVideo.srcObject = mediaStream;
+      await startCameraStream(currentFacingMode);
       cameraOverlay.hidden = false;
-      await cameraVideo.play().catch(() => {});
+      updateSwitchButtonVisibility();
     } catch (e) {
       console.warn("In-page camera unavailable, falling back to native camera:", e);
       stopMediaStream();
@@ -349,6 +373,22 @@
 
   cancelCameraBtn.addEventListener("click", () => {
     closeCameraGuide();
+  });
+
+  switchCameraBtn.addEventListener("click", async () => {
+    const nextFacingMode = currentFacingMode === "user" ? "environment" : "user";
+    try {
+      await startCameraStream(nextFacingMode);
+      currentFacingMode = nextFacingMode;
+    } catch (e) {
+      console.warn("Camera switch failed, keeping previous camera:", e);
+      try {
+        await startCameraStream(currentFacingMode);
+      } catch (e2) {
+        closeCameraGuide();
+        cameraInput.click();
+      }
+    }
   });
 
   shutterBtn.addEventListener("click", () => {
