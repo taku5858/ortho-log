@@ -1,0 +1,218 @@
+:root {
+  --white: #ffffff;
+  --bg: #ffffff;
+  --ink: #1c1c1e;
+  --sub: #8a8a8e;
+  --line: #ececec;
+  --accent: #4a9d8f;
+  --accent-dark: #3a7d72;
+  --danger: #c0554b;
+  --radius: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 20px 48px;
+  min-height: 100vh;
+  background: var(--white);
+}
+
+.app-header {
+  padding: 36px 0 28px;
+  text-align: center;
+}
+
+.app-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.app-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: var(--sub);
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 40px 0 28px;
+}
+
+.capture-section {
+  padding: 0;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  font-size: 1rem;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--white);
+}
+
+.btn-primary:active {
+  background: var(--accent-dark);
+}
+
+.btn-primary:disabled {
+  background: #cfcfcf;
+  cursor: not-allowed;
+}
+
+.btn-text {
+  background: none;
+  color: var(--sub);
+  font-weight: 400;
+  width: auto;
+  padding: 8px 4px;
+  text-decoration: underline;
+}
+
+.preview-wrap {
+  margin: 14px 0;
+  text-align: center;
+}
+
+.preview-wrap img {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  object-fit: contain;
+}
+
+.field-label {
+  display: block;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfbfb;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--white);
+}
+
+.status-msg {
+  min-height: 1.2em;
+  font-size: 0.85rem;
+  color: var(--accent-dark);
+  margin: 12px 0 0;
+  text-align: center;
+}
+
+.status-msg.error {
+  color: var(--danger);
+}
+
+.records-section {
+  margin-top: 0;
+}
+
+.records-section h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.storage-info {
+  font-size: 0.75rem;
+  color: var(--sub);
+  margin: 0 0 20px;
+}
+
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.record-card {
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.record-date {
+  padding: 14px 14px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.record-photo {
+  width: 100%;
+  display: block;
+  max-height: 400px;
+  object-fit: cover;
+  background: #f4f4f4;
+  margin-top: 10px;
+}
+
+.record-memo {
+  padding: 12px 14px 4px;
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.record-actions {
+  padding: 0 14px 14px;
+  text-align: right;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 6px 4px;
+  width: auto;
+}
+
+.empty-msg {
+  color: var(--sub);
+  text-align: center;
+  font-size: 0.9rem;
+  padding: 20px 0;
+}
