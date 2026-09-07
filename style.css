@@ -106,6 +106,12 @@ body {
   object-fit: contain;
 }
 
+.captured-at {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+
 .field-label {
   display: block;
   margin-top: 24px;

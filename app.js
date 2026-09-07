@@ -11,6 +11,7 @@
   const fileInput = document.getElementById("fileInput");
   const previewWrap = document.getElementById("previewWrap");
   const previewImg = document.getElementById("previewImg");
+  const capturedAtText = document.getElementById("capturedAtText");
   const clearPreviewBtn = document.getElementById("clearPreviewBtn");
   const memoInput = document.getElementById("memoInput");
   const saveBtn = document.getElementById("saveBtn");
@@ -22,6 +23,7 @@
   let dbPromise = null;
   let pendingPhoto = null; // { blob, mime }
   let pendingPreviewUrl = null;
+  let pendingCapturedAt = null; // Date: EXIF DateTimeOriginal, or fallback to now
   let listObjectUrls = [];
   let supportsWebp = false;
 
@@ -116,6 +118,114 @@
     return { blob, mime };
   }
 
+  // --- Minimal EXIF reader (no external library) -----------------------
+  // Reads only the DateTimeOriginal (fallback: DateTime) tag from a JPEG's
+  // EXIF block, entirely in-memory on the device. Returns null (never
+  // throws) when the file isn't JPEG or has no usable EXIF date, so the
+  // caller can silently fall back to the current time.
+  const EXIF_READ_BYTES = 262144; // 256KB is enough to reach the date tags on virtually all camera JPEGs
+
+  function readAsciiAt(view, offset, length) {
+    let out = "";
+    for (let i = 0; i < length; i++) {
+      const code = view.getUint8(offset + i);
+      if (code === 0) break;
+      out += String.fromCharCode(code);
+    }
+    return out;
+  }
+
+  function parseExifDateString(str) {
+    const m = /^(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2}):(\d{2})/.exec(str || "");
+    if (!m) return null;
+    const [, y, mo, d, h, mi, s] = m.map(Number);
+    const date = new Date(y, mo - 1, d, h, mi, s);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  function readIfdDateTag(view, ifdOffset, tiffOffset, littleEndian, tagId) {
+    const entryCount = view.getUint16(ifdOffset, littleEndian);
+    for (let i = 0; i < entryCount; i++) {
+      const entryOffset = ifdOffset + 2 + i * 12;
+      const tag = view.getUint16(entryOffset, littleEndian);
+      if (tag !== tagId) continue;
+      const type = view.getUint16(entryOffset + 2, littleEndian);
+      const count = view.getUint32(entryOffset + 4, littleEndian);
+      if (type !== 2) return null; // expect ASCII
+      const valueFieldOffset = entryOffset + 8;
+      const dataOffset =
+        count <= 4 ? valueFieldOffset : tiffOffset + view.getUint32(valueFieldOffset, littleEndian);
+      return readAsciiAt(view, dataOffset, count);
+    }
+    return null;
+  }
+
+  function findIfdPointer(view, ifdOffset, littleEndian, tagId) {
+    const entryCount = view.getUint16(ifdOffset, littleEndian);
+    for (let i = 0; i < entryCount; i++) {
+      const entryOffset = ifdOffset + 2 + i * 12;
+      const tag = view.getUint16(entryOffset, littleEndian);
+      if (tag === tagId) {
+        return view.getUint32(entryOffset + 8, littleEndian);
+      }
+    }
+    return null;
+  }
+
+  function extractDateFromExifBuffer(buffer) {
+    const view = new DataView(buffer);
+    if (view.byteLength < 4 || view.getUint16(0) !== 0xffd8) return null; // not a JPEG (SOI marker)
+
+    let offset = 2;
+    while (offset + 4 <= view.byteLength) {
+      if (view.getUint8(offset) !== 0xff) break;
+      const marker = view.getUint8(offset + 1);
+
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+        offset += 2;
+        continue;
+      }
+      if (marker === 0xda) break; // start of scan: no more metadata follows
+
+      const segmentSize = view.getUint16(offset + 2);
+      if (marker === 0xe1 && offset + 4 + 6 <= view.byteLength) {
+        const isExif = readAsciiAt(view, offset + 4, 4) === "Exif";
+        if (isExif) {
+          const tiffOffset = offset + 4 + 6;
+          if (tiffOffset + 8 > view.byteLength) return null;
+          const byteOrderMark = view.getUint16(tiffOffset);
+          const littleEndian = byteOrderMark === 0x4949;
+          if (!littleEndian && byteOrderMark !== 0x4d4d) return null;
+
+          const ifd0Offset = tiffOffset + view.getUint32(tiffOffset + 4, littleEndian);
+          const exifIfdPointer = findIfdPointer(view, ifd0Offset, littleEndian, 0x8769);
+
+          if (exifIfdPointer) {
+            const exifIfdOffset = tiffOffset + exifIfdPointer;
+            const original = readIfdDateTag(view, exifIfdOffset, tiffOffset, littleEndian, 0x9003);
+            const parsed = parseExifDateString(original);
+            if (parsed) return parsed;
+          }
+          const fallbackTag = readIfdDateTag(view, ifd0Offset, tiffOffset, littleEndian, 0x0132);
+          return parseExifDateString(fallbackTag);
+        }
+      }
+      offset += 2 + segmentSize;
+    }
+    return null;
+  }
+
+  async function extractExifDateTaken(file) {
+    try {
+      const slice = file.slice(0, EXIF_READ_BYTES);
+      const buffer = await slice.arrayBuffer();
+      return extractDateFromExifBuffer(buffer);
+    } catch (e) {
+      return null;
+    }
+  }
+  // -----------------------------------------------------------------------
+
   function setStatus(text, isError) {
     statusMsg.textContent = text || "";
     statusMsg.classList.toggle("error", !!isError);
@@ -127,8 +237,10 @@
       pendingPreviewUrl = null;
     }
     pendingPhoto = null;
+    pendingCapturedAt = null;
     previewWrap.hidden = true;
     previewImg.src = "";
+    capturedAtText.textContent = "";
     memoInput.value = "";
     saveBtn.disabled = true;
     fileInput.value = "";
@@ -144,11 +256,16 @@
 
     setStatus("写真を処理中...", false);
     try {
-      const processed = await processImageFile(file);
+      const [processed, exifDate] = await Promise.all([
+        processImageFile(file),
+        extractExifDateTaken(file),
+      ]);
       if (pendingPreviewUrl) URL.revokeObjectURL(pendingPreviewUrl);
       pendingPhoto = processed;
+      pendingCapturedAt = exifDate || new Date();
       pendingPreviewUrl = URL.createObjectURL(processed.blob);
       previewImg.src = pendingPreviewUrl;
+      capturedAtText.textContent = `撮影日：${formatDate(pendingCapturedAt.toISOString())}`;
       previewWrap.hidden = false;
       saveBtn.disabled = false;
       setStatus("", false);
@@ -168,7 +285,7 @@
     setStatus("保存中...", false);
     try {
       const record = {
-        date: new Date().toISOString(),
+        date: (pendingCapturedAt || new Date()).toISOString(),
         memo: memoInput.value.trim(),
         photoBlob: pendingPhoto.blob,
         photoType: pendingPhoto.mime,
